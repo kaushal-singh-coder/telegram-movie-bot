@@ -11,16 +11,13 @@ import requests
 from bs4 import BeautifulSoup
 import urllib.parse
 
-# Replace this with your actual bot token
 TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 
 logging.basicConfig(level=logging.INFO)
 
-# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Welcome! Send me a movie name to search.")
 
-# Movie name search
 async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     movie_name = update.message.text.strip()
     search_query = urllib.parse.quote(movie_name)
@@ -56,7 +53,6 @@ async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await update.message.reply_text("❌ No movie results found.")
 
-# Handle user choice number
 async def handle_movie_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "movie_list" not in context.user_data:
         return
@@ -83,9 +79,7 @@ async def handle_movie_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
                 a_tag = mast_div.find("a")
                 link = a_tag["href"]
                 full_link = link if link.startswith("http") else base_url + link
-                text = a_tag.text.strip()
 
-                # Visit source link to get final download
                 try:
                     src_resp = requests.get(full_link, headers=headers)
                     src_soup = BeautifulSoup(src_resp.text, "html.parser")
@@ -93,12 +87,39 @@ async def handle_movie_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
                     for a in src_soup.find_all("a"):
                         final_href = a.get("href", "")
                         if final_href and ("download" in final_href or "dl" in final_href):
-                            reply = f"""📥 Final Download Link (May show 403 in browser):
+                            reply = (
+                                "📥 Final Download Link (May show 403 in browser):\n\n"
+                                f"🔗 {final_href}\n\n"
+                                "❗ If you see a '403 Forbidden' error:\n\n"
+                                "✅ PC / Termux:\n"
+                                "```bash\n"
+                                f'curl -L -o "movie.mp4" -H "Referer: {full_link}" -A "{headers["User-Agent"]}" "{final_href}"\n'
+                                "```\n\n"
+                                "✅ Android (ADM or similar):\n"
+                                "Paste the URL and set Referer header to:\n"
+                                f"{full_link}"
+                            )
+                            await update.message.reply_text(reply)
+                            links_found = True
+                            break
 
-🔗 {final_href}
+                    if links_found:
+                        break
 
-❗ If you see a "403 Forbidden" error:
+                except Exception as e:
+                    await update.message.reply_text(f"⚠️ Error getting final link: {e}")
+                    return
 
-✅ PC / Termux:
-```bash
-curl -L -o "movie.mp4" -H "Referer: {full_link}" -A "{headers['User-Agent']}" "{final_href}"
+        if not links_found:
+            await update.message.reply_text("❌ No download links found.")
+    else:
+        await update.message.reply_text("❌ Invalid selection number.")
+
+if __name__ == "__main__":
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_choice))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
+
+    app.run_polling()

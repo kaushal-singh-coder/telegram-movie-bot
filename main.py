@@ -115,11 +115,19 @@ async def handle_movie_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await update.message.reply_text("❌ Invalid selection number.")
 
+# 🧠 Wrapper that decides which function to run
+async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text.isdigit() and "movie_list" in context.user_data:
+        await handle_movie_choice(update, context)
+    else:
+        await handle_movie_search(update, context)
+
+# ✅ App runner
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_choice))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_message))
 
     app.run_polling()

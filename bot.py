@@ -1,101 +1,118 @@
+import os
 import requests
-from bs4 import BeautifulSoup
 import urllib.parse
+from bs4 import BeautifulSoup
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Input movie name
-movie_name = input("Enter movie name to search: ")
-search_query = urllib.parse.quote(movie_name)
-search_url = f"https://www.mp4moviez.now/search/{search_query}.html"
+# Global storage for user sessions
+user_sessions = {}
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-}
+BASE_URL = "https://www.mp4moviez.now"
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-print(f"\n🔍 Searching: {search_url}")
 
-# Fetch search page
-response = requests.get(search_url, headers=headers)
-soup = BeautifulSoup(response.text, "html.parser")
+# /start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👋 Welcome! Send me a movie name to search.")
 
-movie_list = []
-base_url = "https://www.mp4moviez.now"
 
-print("\n🎬 Movie Results:\n")
-for i, div in enumerate(soup.select("div.fl"), start=1):
-    try:
-        a_tag = div.find("a")
-        href = a_tag["href"]
-        full_link = href if href.startswith("http") else base_url + href
+# Handle movie name input
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    text = update.message.text.strip()
 
-        title_divs = div.find_all("div")
-        title = title_divs[-1].text.strip()
-
-        img = div.find("img")
-        img_src = img["src"]
-        img_full = base_url + img_src if img_src.startswith("/") else img_src
-
-        movie_list.append((title, full_link, img_full))
-
-        print(f"{i}. 🎬 {title}")
-        print(f"   🔗 Link: {full_link}")
-        print(f"   🖼️ Poster: {img_full}\n")
-    except Exception as e:
-        print(f"❌ Skipped due to error: {e}")
-
-# Ask user which movie to open
-if movie_list:
-    try:
-        choice = int(input("👉 Enter the number of the movie you want to open: "))
-        if 1 <= choice <= len(movie_list):
-            movie_page = movie_list[choice - 1][1]
-            print(f"\n✅ Opening: {movie_page}")
-            response = requests.get(movie_page, headers=headers)
-            soup = BeautifulSoup(response.text, "html.parser")
-
-            download_links = []
-
-            for mast_div in soup.select("div.mast"):
-                img = mast_div.find("img", alt="Download movie")
-                if img:
-                    a_tag = mast_div.find("a")
-                    link = a_tag["href"]
-                    full_link = link if link.startswith("http") else base_url + link
-                    text = a_tag.text.strip()
-                    download_links.append((text, full_link))
-
-            if download_links:
-                print("\n⬇️ Download Source Pages:\n")
-                for i, (text, link) in enumerate(download_links, start=1):
-                    print(f"{i}. {text}")
-                    print(f"   🔗 Source Link: {link}")
-
-                    try:
-                        src_resp = requests.get(link, headers=headers)
-                        src_soup = BeautifulSoup(src_resp.text, "html.parser")
-
-                        found = False
-                        for a in src_soup.find_all("a"):
-                            final_href = a.get("href", "")
-                            if final_href and ("download" in final_href or "dl" in final_href or "files" in final_href):
-                                final_headers = {
-                                    "User-Agent": headers["User-Agent"],
-                                    "Referer": link
-                                }
-                                test = requests.head(final_href, headers=final_headers)
-                                if test.status_code == 200:
-                                    print(f"   ✅ Final Download Link (Works in browser): {final_href}")
-                                    print(f"   📥 Use this in Termux:\nwget --header=\"Referer: {link}\" --user-agent=\"{headers['User-Agent']}\" \"{final_href}\"\n")
-                                    found = True
-                        if not found:
-                            print("   ❌ No final link found.\n")
-
-                    except Exception as e:
-                        print(f"   ❌ Error visiting source: {e}\n")
+    # If user already selected a movie, treat next input as number
+    if user_id in user_sessions and user_sessions[user_id].get("awaiting_choice"):
+        try:
+            choice = int(text)
+            movies = user_sessions[user_id]["movies"]
+            if 1 <= choice <= len(movies):
+                await send_movie_links(update, movies[choice - 1][1], user_id)
             else:
-                print("❌ No download links found on movie page.")
-        else:
-            print("❌ Invalid choice.")
-    except ValueError:
-        print("❌ Invalid input. Please enter a number.")
-else:
-    print("❌ No movie results found.")
+                await update.message.reply_text("❌ Invalid number.")
+        except ValueError:
+            await update.message.reply_text("❌ Please send a number.")
+        return
+
+    # Otherwise treat as movie search
+    search_query = urllib.parse.quote(text)
+    search_url = f"{BASE_URL}/search/{search_query}.html"
+    response = requests.get(search_url, headers=HEADERS)
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    movie_list = []
+    for div in soup.select("div.fl"):
+        try:
+            a_tag = div.find("a")
+            href = a_tag["href"]
+            full_link = href if href.startswith("http") else BASE_URL + href
+            title = div.find_all("div")[-1].text.strip()
+            movie_list.append((title, full_link))
+        except Exception:
+            continue
+
+    if movie_list:
+        msg = "🎬 *Movie Results:*\n\n"
+        for i, (title, _) in enumerate(movie_list, start=1):
+            msg += f"{i}. {title}\n"
+        msg += "\n👉 Send the number of the movie to get download links."
+
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+        # Save session
+        user_sessions[user_id] = {
+            "movies": movie_list,
+            "awaiting_choice": True
+        }
+    else:
+        await update.message.reply_text("❌ No movies found.")
+
+
+# Send download links
+async def send_movie_links(update: Update, movie_url: str, user_id: int):
+    try:
+        res = requests.get(movie_url, headers=HEADERS)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        links_found = False
+        for mast_div in soup.select("div.mast"):
+            img = mast_div.find("img", alt="Download movie")
+            if img:
+                a_tag = mast_div.find("a")
+                link = a_tag["href"]
+                full_link = link if link.startswith("http") else BASE_URL + link
+                text = a_tag.text.strip()
+
+                await update.message.reply_text(f"🔗 *{text}*\n{full_link}", parse_mode="Markdown")
+
+                # Try to find direct download link
+                src_res = requests.get(full_link, headers=HEADERS)
+                src_soup = BeautifulSoup(src_res.text, "html.parser")
+
+                for a in src_soup.find_all("a"):
+                    final_href = a.get("href", "")
+                    if "download" in final_href or "dl" in final_href:
+                        await update.message.reply_text(f"📥 *Final Link:*\n{final_href}", parse_mode="Markdown")
+                        links_found = True
+                        break
+
+        if not links_found:
+            await update.message.reply_text("❌ No final links found.")
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error: {str(e)}")
+
+    # Clear session
+    user_sessions.pop(user_id, None)
+
+
+# Run the bot
+if __name__ == "__main__":
+    TOKEN = os.getenv("BOT_TOKEN")
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("🤖 Bot running...")
+    app.run_polling()

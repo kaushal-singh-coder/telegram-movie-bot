@@ -11,13 +11,16 @@ import requests
 from bs4 import BeautifulSoup
 import urllib.parse
 
-TOKEN = "8249338284:AAHYJTKEm2wjDAdHeM9VeeOW5sdh0gWqpsc"  # Replace with your bot token
+# Replace this with your actual bot token
+TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 
 logging.basicConfig(level=logging.INFO)
 
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Welcome! Send me a movie name to search.")
 
+# Movie name search
 async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     movie_name = update.message.text.strip()
     search_query = urllib.parse.quote(movie_name)
@@ -53,6 +56,7 @@ async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await update.message.reply_text("❌ No movie results found.")
 
+# Handle user choice number
 async def handle_movie_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "movie_list" not in context.user_data:
         return
@@ -89,4 +93,12 @@ async def handle_movie_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
                     for a in src_soup.find_all("a"):
                         final_href = a.get("href", "")
                         if final_href and ("download" in final_href or "dl" in final_href):
-                            reply = f"🔗 Download
+                            reply = f"""📥 Final Download Link (May show 403 in browser):
+
+🔗 {final_href}
+
+❗ If you see a "403 Forbidden" error:
+
+✅ PC / Termux:
+```bash
+curl -L -o "movie.mp4" -H "Referer: {full_link}" -A "{headers['User-Agent']}" "{final_href}"

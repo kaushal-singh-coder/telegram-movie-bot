@@ -11,7 +11,7 @@ import requests
 from bs4 import BeautifulSoup
 import urllib.parse
 
-TOKEN = "8249338284:AAHYJTKEm2wjDAdHeM9VeeOW5sdh0gWqpsc"
+TOKEN = "8249338284:AAEjkPudegm3HXOTMnkOLH1o_MOJ6TiVtIA"
 
 logging.basicConfig(level=logging.INFO)
 

@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 import urllib.parse
 
 # Replace this with your actual bot token
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TOKEN = "8249338284:AAHYJTKEm2wjDAdHeM9VeeOW5sdh0gWqpsc"
 
 logging.basicConfig(level=logging.INFO)
 
